@@ -50,7 +50,7 @@ class ModelNet(Dataset):
         cls = self.classes[file_path.parents[1].stem]
         mesh = trimesh.load(str(file_path))
         sampled_points = mesh.sample(count=self._points_number)
-        points = torch.from_numpy(sampled_points.astype(np.float32))
+        points = torch.from_numpy(sampled_points.astype(np.float32).T)
         return points, torch.from_numpy(np.array([cls]).astype(np.int64))
 
     def __len__(self) -> int:
@@ -64,7 +64,7 @@ def __test__(dataset_dir: pathlib.Path = pathlib.Path("/home/szobov/dev/learning
     assert len(dataset) == 9843
     item = dataset[0]
     assert item[1].data == torch.tensor([0])
-    assert item[0].shape[1] == 3, f"{item[0][0].shape} = (n, 3)"
+    assert item[0].shape[0] == 3, f"{item[0][0].shape} = (3, n)"
 
 
 if __name__ == '__main__':
