@@ -9,7 +9,7 @@ class GlobalMaxPooling(nn.Module):
 
 class TNet(nn.Module):
 
-    def __init__(self):
+    def __init__(self, feature_transfom_net: bool, train: bool = True):
         super().__init__()
         # output 3x3 matrix (initialized as identity matrix)
         # shared MLP(64, 128, 1024) on each point
@@ -20,7 +20,8 @@ class TNet(nn.Module):
         # ReLU and batch-norm
         # fully-connected with size 256
         # TODO: move from nn.Sequential, since it's very difficult to debug it
-        self._layers = nn.Sequential(*[
+        self._feature_transform_net = feature_transfom_net
+        self._layers = [
             # I use Conv1d instead of Linear because BatchNorm1d
             # expects the input shape to be (N, C, L), but with Linear
             # it will be (N, L, C)
@@ -48,18 +49,32 @@ class TNet(nn.Module):
             nn.ReLU(),
             nn.BatchNorm1d(256),
 
-            nn.Linear(256, 9)  # The didn't clearly mention it in paper
-        ])
+        ]
+
+        # The didn't clearly mention it in paper
+        if feature_transfom_net:
+            self._layers.append(nn.Linear(256, 4096))
+        else:
+            self._layers.append(nn.Linear(256, 9))
+
+        self._model = nn.Sequential(*self._layers)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        result = self._layers(x)
-        assert result.shape[-1] == 9, f"{result.shape[-1]} != 9"
+        assert x.shape[1] == 3  # batch_size, 3, number_of_points
+        result = self._model(x)
+        expected_output_dim = 9
+        matrix_shape = (3, 3)
+        if self._feature_transform_net:
+            expected_output_dim = 4096
+            matrix_shape = (64, 64)
+
+        assert result.shape[-1] == expected_output_dim, f"{result.shape[-1]} != {expected_output_dim}"
 
         initial_matrix = torch.nn.init.eye_(
-            torch.empty(3, 3)).reshape(1, 9).repeat(x.shape[0], 1)
+            torch.empty(size=matrix_shape)).reshape(1, expected_output_dim).repeat(x.shape[0], 1)
 
         assert initial_matrix.shape == result.shape, f"{initial_matrix.shape} != {result.shape}"
-        new_shape = result.shape[:-1] + (3, 3)
+        new_shape = result.shape[:-1] + matrix_shape
         return (initial_matrix + result).reshape(new_shape)
 
 
