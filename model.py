@@ -34,6 +34,8 @@ class TNet(nn.Module):
             # it will be (N, L, C)
             nn.Conv1d(self._expected_input_dim, 64, 1),
             nn.ReLU(),
+            # XXX: rewrite to use nn.functional.batch_norm since we need a custom
+            #      momentum (decay) calculation, changing from 0.5 to 0.1
             nn.BatchNorm1d(64),
 
             nn.Conv1d(64, 128, 1),
@@ -78,9 +80,8 @@ class TNet(nn.Module):
 
 class PointNet(nn.Module):
 
-    def __init__(self, number_of_classes: int, is_train: bool = True):
+    def __init__(self, number_of_classes: int):
         super().__init__()
-        self._is_train = is_train
         self._number_of_classes = number_of_classes
         self._transform_net = TNet(feature_transfom_net=False)
         self._mlps_1 = nn.Sequential(*[
@@ -149,8 +150,8 @@ class PointNet(nn.Module):
 
         global_features = self._mlps_3(global_features)
 
-        if self._is_train:
-            global_features = self._dropout(global_features)
+        # it should work only if model.train() was called
+        global_features = self._dropout(global_features)
 
         scores = self._mlps_4(global_features)
         assert scores.shape == (batch_size, self._number_of_classes), scores.shape
