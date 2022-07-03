@@ -156,3 +156,15 @@ class PointNet(nn.Module):
         assert scores.shape == (batch_size, self._number_of_classes), scores.shape
 
         return scores, feature_transform_matrix  # to calculate regularization
+
+    @staticmethod
+    def regularization(feature_transform_matrix: torch.Tensor):
+        A_A_T = torch.bmm(feature_transform_matrix, torch.transpose(feature_transform_matrix, 1, 2))
+        identity = (torch.eye(feature_transform_matrix.shape[-1]).
+                    repeat(feature_transform_matrix.shape[0], 1).
+                    reshape(A_A_T.shape))
+        return torch.mean(torch.linalg.matrix_norm(identity - A_A_T, ord="fro"))
+
+    @staticmethod
+    def loss(scores: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        return nn.functional.cross_entropy(scores, target)

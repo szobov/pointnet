@@ -24,3 +24,20 @@ def test_pointnet():
     scores.sum().backward()
     assert batch.grad.numel()
 
+
+def test_regularization():
+    batch = torch.rand(5, 3, 1000)
+    tnet = PointNet(number_of_classes=16)
+    [_, feature_transform_matrix] = tnet.forward(batch)
+    L_reg = PointNet.regularization(feature_transform_matrix)
+    assert L_reg.shape == torch.Size([])
+    assert L_reg != torch.Tensor([0])
+
+
+def test_loss():
+    batch = torch.rand(5, 3, 1000)
+    tnet = PointNet(number_of_classes=16)
+    [scores, _] = tnet.forward(batch)
+    loss = PointNet.loss(scores)
+    assert loss.shape == torch.Size([])
+    assert loss != torch.Tensor([0])
