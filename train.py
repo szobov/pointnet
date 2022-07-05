@@ -27,24 +27,23 @@ def train_loop(dataloader: DataLoader, model: torch.nn.Module,
 
     size = len(dataloader.dataset)
     model.train()
-
+    print("Training...")
     for idx, batch in enumerate(dataloader):
         (points, cls) = batch
         (scores, feature_transform_matrix) = model(points)
         L_reg = PointNet.regularization(feature_transform_matrix)
-        loss = PointNet.loss(scores, cls)
+        loss = PointNet.loss(scores, torch.flatten(cls))
         loss = loss + L_reg * w_reg
 
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
-
         if idx % 50 == 0:
             loss, current = loss.item(), idx * len(points)
             print(f"loss: {loss:>7f}  [{current:>5d}/{size:>5d}]")
 
 
-def test_loop(dataloader, model, loss_fn):
+def test_loop(dataloader, model):
     size = len(dataloader.dataset)
     num_batches = len(dataloader)
 
@@ -52,11 +51,12 @@ def test_loop(dataloader, model, loss_fn):
 
     model.eval()
 
+    print("Validating...")
     with torch.no_grad():
         for batch in dataloader:
             (points, cls) = batch
             (scores, _) = model(points)
-            test_loss += PointNet.loss(scores, cls).item()
+            test_loss += PointNet.loss(scores, torch.flatten(cls)).item()
             correct += (scores.argmax(1) == cls).type(torch.float).sum().item()
 
     test_loss /= num_batches
@@ -68,12 +68,15 @@ def main():
     dataset_dir = pathlib.Path("/home/szobov/dev/learning/pointnet/dataset/ModelNet40")
     batch_size = 32
     epoch_number = 250
+    dataloader_workers_num = 8
 
     train_dataset = ModelNet(dataset_dir, train=True)
-    train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    train_dataloader = DataLoader(train_dataset, batch_size=batch_size,
+                                  shuffle=True, num_workers=dataloader_workers_num)
 
     test_dataset = ModelNet(dataset_dir, train=False)
-    test_dataloader = DataLoader(test_dataset, batch_size=batch_size, shuffle=True)
+    test_dataloader = DataLoader(test_dataset, batch_size=batch_size,
+                                 shuffle=True, num_workers=dataloader_workers_num)
 
     model = PointNet(len(train_dataset.classes))
 

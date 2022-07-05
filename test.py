@@ -36,8 +36,9 @@ def test_regularization():
 
 def test_loss():
     batch = torch.rand(5, 3, 1000)
+    cls = torch.randint(0, 16, (5, ))
     tnet = PointNet(number_of_classes=16)
     [scores, _] = tnet.forward(batch)
-    loss = PointNet.loss(scores)
+    loss = PointNet.loss(scores, cls)
     assert loss.shape == torch.Size([])
     assert loss != torch.Tensor([0])
