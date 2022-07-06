@@ -12,6 +12,7 @@ def test_tnet():
     assert batch.grad.numel()
 
     tnet_feat = TNet(feature_transfom_net=True)
+    batch = torch.rand(5, 64, 1000, requires_grad=True)
     result = tnet_feat.forward(batch)
     assert result.shape == (5, 64, 64)
 

@@ -1,7 +1,11 @@
 import pathlib
+import typing as _t
 
 import torch
 from torch.utils.data import DataLoader
+from torch.utils.tensorboard import SummaryWriter
+
+import rich.progress
 
 from dataset import ModelNet
 from model import PointNet
@@ -22,14 +26,16 @@ def get_optimizer(model: torch.nn.Module) -> tuple[torch.optim.Optimizer, torch.
 
 
 def train_loop(dataloader: DataLoader, model: torch.nn.Module,
-               optimizer: torch.optim.Optimizer, sheduler: torch.optim.lr_scheduler.StepLR):
+               optimizer: torch.optim.Optimizer, sheduler: torch.optim.lr_scheduler.StepLR,
+               device: torch.device,
+               profiler: _t.Optional[torch.profiler.profile]):
     w_reg = 0.001
 
     size = len(dataloader.dataset)
     model.train()
-    print("Training...")
-    for idx, batch in enumerate(dataloader):
+    for idx, batch in rich.progress.track(enumerate(dataloader), description="Training"):
         (points, cls) = batch
+        (points, cls) = points.to(device, non_blocking=True), cls.to(device, non_blocking=True)
         (scores, feature_transform_matrix) = model(points)
         L_reg = PointNet.regularization(feature_transform_matrix)
         loss = PointNet.loss(scores, torch.flatten(cls))
@@ -38,12 +44,15 @@ def train_loop(dataloader: DataLoader, model: torch.nn.Module,
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
+        if profiler is not None:
+            profiler.step()
         if idx % 50 == 0:
             loss, current = loss.item(), idx * len(points)
             print(f"loss: {loss:>7f}  [{current:>5d}/{size:>5d}]")
 
 
-def test_loop(dataloader, model):
+def test_loop(dataloader: DataLoader, model: torch.nn.Module,
+              device: torch.device):
     size = len(dataloader.dataset)
     num_batches = len(dataloader)
 
@@ -55,6 +64,7 @@ def test_loop(dataloader, model):
     with torch.no_grad():
         for batch in dataloader:
             (points, cls) = batch
+            (points, cls) = points.to(device, non_blocking=True), cls.to(device, non_blocking=True)
             (scores, _) = model(points)
             test_loss += PointNet.loss(scores, torch.flatten(cls)).item()
             correct += (scores.argmax(1) == cls).type(torch.float).sum().item()
@@ -66,26 +76,57 @@ def test_loop(dataloader, model):
 
 def main():
     dataset_dir = pathlib.Path("/home/szobov/dev/learning/pointnet/dataset/ModelNet40")
-    batch_size = 32
+    batch_size = 16
     epoch_number = 250
     dataloader_workers_num = 8
+    enable_profiler = False
 
+    device: torch.device
+    if torch.cuda.is_available():
+        device = torch.device('cuda')
+    else:
+        device = torch.device('cpu')
+
+    print("Use device: ", device)
+
+    writer = SummaryWriter('log/profile')
     train_dataset = ModelNet(dataset_dir, train=True)
-    train_dataloader = DataLoader(train_dataset, batch_size=batch_size,
+    train_dataloader = DataLoader(train_dataset, batch_size=batch_size, pin_memory=True,
                                   shuffle=True, num_workers=dataloader_workers_num)
 
     test_dataset = ModelNet(dataset_dir, train=False)
-    test_dataloader = DataLoader(test_dataset, batch_size=batch_size,
+    test_dataloader = DataLoader(test_dataset, batch_size=batch_size, pin_memory=True,
                                  shuffle=True, num_workers=dataloader_workers_num)
 
     model = PointNet(len(train_dataset.classes))
+    writer.add_graph(model, torch.rand(5, 3, 1000))
+    model = model.to(device)
+    if torch.cuda.is_available():
+        assert all(map(lambda p: p.is_cuda, model.parameters()))
 
     (optimizer, scheduler) = get_optimizer(model)
 
     for t in range(epoch_number):
         print(f"Epoch {t+1}\n-------------------------------")
-        train_loop(train_dataloader, model, optimizer, scheduler)
-        test_loop(test_dataloader, model)
+        if enable_profiler:
+            with torch.profiler.profile(
+                    activities=[torch.profiler.ProfilerActivity.CPU,
+                                torch.profiler.ProfilerActivity.GPU],
+                    schedule=torch.profiler.schedule(
+                        wait=2,
+                        warmup=2,
+                        active=6,
+                        repeat=1),
+                    on_trace_ready=torch.profiler.tensorboard_trace_handler('log/profile'),
+                    profile_memory=True,
+                    record_shapes=True,
+                    with_flops=True,
+                    with_stack=True
+            ) as profiler:
+                train_loop(train_dataloader, model, optimizer, scheduler, device, profiler)
+        else:
+            train_loop(train_dataloader, model, optimizer, scheduler, device, profiler=None)
+        test_loop(test_dataloader, model, device)
 
 
 if __name__ == '__main__':

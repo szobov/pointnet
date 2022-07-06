@@ -64,14 +64,16 @@ class TNet(nn.Module):
 
         self._model = nn.Sequential(*self._layers)
 
+        self._initial_matrix = torch.nn.init.eye_(
+            torch.empty(size=self._output_matrix_shape)).reshape(1, self._expected_output_dim)
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        assert x.shape[1] == self._expected_input_dim, x.shape
+        assert x.shape[1] == self._expected_input_dim, f"{x.shape}, {self._expected_input_dim}"
         result = self._model(x)
 
         assert result.shape[-1] == self._expected_output_dim, f"{result.shape[-1]} != {self._expected_output_dim}"
 
-        initial_matrix = torch.nn.init.eye_(
-            torch.empty(size=self._output_matrix_shape)).reshape(1, self._expected_output_dim).repeat(x.shape[0], 1)
+        initial_matrix = self._initial_matrix.repeat(x.shape[0], 1).to(x.device)
 
         assert initial_matrix.shape == result.shape, f"{initial_matrix.shape} != {result.shape}"
         new_shape = result.shape[:-1] + self._output_matrix_shape
@@ -163,7 +165,7 @@ class PointNet(nn.Module):
         A_A_T = torch.bmm(feature_transform_matrix, torch.transpose(feature_transform_matrix, 1, 2))
         identity = (torch.eye(feature_transform_matrix.shape[-1]).
                     repeat(feature_transform_matrix.shape[0], 1).
-                    reshape(A_A_T.shape))
+                    reshape(A_A_T.shape)).to(feature_transform_matrix.device)
         return torch.mean(torch.linalg.matrix_norm(identity - A_A_T, ord="fro"))
 
     @staticmethod
