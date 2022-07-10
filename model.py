@@ -4,7 +4,7 @@ from torch import nn
 
 class GlobalMaxPooling(torch.jit.ScriptModule):
     @torch.jit.script_method
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         return torch.max(x, 2)[0]
 
 
@@ -56,8 +56,6 @@ class TNet(torch.jit.ScriptModule):
             nn.BatchNorm1d(512),
 
             nn.Linear(512, 256),
-            nn.ReLU(),
-            nn.BatchNorm1d(256),
         ]
 
         # The didn't clearly mention it in paper
@@ -127,8 +125,6 @@ class PointNet(torch.jit.ScriptModule):
 
         self._mlps_4 = nn.Sequential(*[
             nn.Linear(256, number_of_classes),
-            nn.BatchNorm1d(number_of_classes),
-            nn.ReLU()
         ])
 
     @torch.jit.script_method
