@@ -1,6 +1,6 @@
 import torch
 
-from model import TNet, PointNet
+from model import TNet, PointNet, feature_regularization, calculate_loss
 
 
 def test_tnet():
@@ -26,11 +26,11 @@ def test_pointnet():
     assert batch.grad.numel()
 
 
-def test_regularization():
+def test_feature_regularization():
     batch = torch.rand(5, 3, 1000)
     tnet = PointNet(number_of_classes=16)
     [_, feature_transform_matrix] = tnet.forward(batch)
-    L_reg = PointNet.regularization(feature_transform_matrix)
+    L_reg = feature_regularization(feature_transform_matrix)
     assert L_reg.shape == torch.Size([])
     assert L_reg != torch.Tensor([0])
 
@@ -40,6 +40,6 @@ def test_loss():
     cls = torch.randint(0, 16, (5, ))
     tnet = PointNet(number_of_classes=16)
     [scores, _] = tnet.forward(batch)
-    loss = PointNet.loss(scores, cls)
+    loss = calculate_loss(scores, cls)
     assert loss.shape == torch.Size([])
     assert loss != torch.Tensor([0])

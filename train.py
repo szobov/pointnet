@@ -8,7 +8,7 @@ from torch.utils.tensorboard import SummaryWriter
 import rich.progress
 
 from dataset import ModelNet
-from model import PointNet
+from model import PointNet, feature_regularization, calculate_loss
 
 
 def get_optimizer(model: torch.nn.Module) -> tuple[torch.optim.Optimizer, torch.optim.lr_scheduler.StepLR]:
@@ -37,11 +37,11 @@ def train_loop(dataloader: DataLoader, model: torch.nn.Module,
         (points, cls) = batch
         (points, cls) = points.to(device, non_blocking=True), cls.to(device, non_blocking=True)
         (scores, feature_transform_matrix) = model(points)
-        L_reg = PointNet.regularization(feature_transform_matrix)
-        loss = PointNet.loss(scores, torch.flatten(cls))
+        L_reg = feature_regularization(feature_transform_matrix)
+        loss = calculate_loss(scores, torch.flatten(cls))
         loss = loss + L_reg * w_reg
 
-        optimizer.zero_grad()
+        optimizer.zero_grad(set_to_none=True)
         loss.backward()
         optimizer.step()
         if profiler is not None:
@@ -76,7 +76,7 @@ def test_loop(dataloader: DataLoader, model: torch.nn.Module,
 
 def main():
     dataset_dir = pathlib.Path("/home/szobov/dev/learning/pointnet/dataset/ModelNet40")
-    batch_size = 16
+    batch_size = 8
     epoch_number = 250
     dataloader_workers_num = 8
     enable_profiler = False
@@ -110,8 +110,8 @@ def main():
         print(f"Epoch {t+1}\n-------------------------------")
         if enable_profiler:
             with torch.profiler.profile(
-                    activities=[torch.profiler.ProfilerActivity.CPU,
-                                torch.profiler.ProfilerActivity.GPU],
+                    activities=[
+                                torch.profiler.ProfilerActivity.CUDA],
                     schedule=torch.profiler.schedule(
                         wait=2,
                         warmup=2,
