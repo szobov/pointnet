@@ -13,7 +13,7 @@ from torch.utils.data import Dataset
 class ModelNet(Dataset):
 
     def __init__(self, dataset_dir: pathlib.Path, train: bool = True,
-                 points_number: int = 1024):
+                 points_number: int = 1024, use_cache: bool = True):
         super().__init__()
         self._train = train
         self._points_number = points_number
@@ -34,6 +34,26 @@ class ModelNet(Dataset):
                             )
                    ))
         )
+        self._use_cache = use_cache
+        if self._use_cache:
+            self._cached_files: list[pathlib.Path] = []
+            self._build_cache(dataset_dir)
+
+    def _build_cache(self, dataset_dir: pathlib.Path):
+        cache_dir = dataset_dir.parent / f"cached_{dataset_dir.name}"
+        for file_path in self.files:
+            cache_file_path = file_path.relative_to(dataset_dir).with_suffix(".npy")
+            cache_file_path = cache_dir / cache_file_path
+            if cache_file_path.exists():
+                self._cached_files.append(cache_file_path)
+                continue
+            cache_file_path.parent.mkdir(parents=True, exist_ok=True)
+            sampled_points = self._load_mesh_and_sample_points(file_path,
+                                                               self._points_number)
+            print("Save cached file in: %s", cache_file_path)
+            np.save(cache_file_path, sampled_points)
+            self._cached_files.append(cache_file_path)
+        assert len(self._cached_files) == len(self._files)
 
     @property
     def classes(self) -> dict[str, int]:
@@ -49,20 +69,29 @@ class ModelNet(Dataset):
     def __getitem__(self, index: int) -> tuple[torch.Tensor, torch.Tensor]:
         file_path = self.files[index]
         cls = self.classes[file_path.parents[1].stem]
-        mesh = trimesh.load(str(file_path))
-        sampled_points = mesh.sample(count=self._points_number).astype(np.float32)
+        if self._use_cache:
+            sampled_points = np.load(self._cached_files[index])
+        else:
+            sampled_points = self._load_mesh_and_sample_points(file_path,
+                                                               self._points_number)
+        normalized_points = self._normalize_to_unit_sphere(sampled_points)
         if self._train:
-            sampled_points = self._augment_points(sampled_points)
+            augmented_points = self._augment_points(normalized_points)
+            assert augmented_points.shape == sampled_points.shape
+            sampled_points = augmented_points
 
-        points = torch.from_numpy(sampled_points.T)
-        return points, torch.from_numpy(np.array([cls]).astype(np.int64))
+        points = torch.from_numpy(sampled_points.T.astype(np.float32))
+        return points, torch.from_numpy(np.array(cls).astype(np.int64))
+
+    def _load_mesh_and_sample_points(self, file_path: pathlib.Path,
+                                     points_number: int) -> np.ndarray:
+        mesh = trimesh.load(str(file_path))
+        return mesh.sample(count=points_number)
 
     def _augment_points(self, points: np.ndarray) -> np.ndarray:
         return self._jitter_points(
                 self._rotate_around_z_axis(
-                    self._normalize_to_unit_sphere(
-                        self._shuffle_points(points)
-                    )
+                    self._shuffle_points(points)
                 )
             )
 
