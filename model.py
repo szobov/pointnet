@@ -1,14 +1,21 @@
 import torch
 from torch import nn
 
+jit_nn_module = torch.jit.ScriptModule
+jit_script_method = torch.jit.script_method
+jit_script = torch.jit.script
+# jit_nn_module = nn.Module
+# jit_script_method = lambda f: f
+# jit_script = lambda f: f
 
-class GlobalMaxPooling(torch.jit.ScriptModule):
-    @torch.jit.script_method
+
+class GlobalMaxPooling(jit_nn_module):
+    @jit_script_method
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return torch.max(x, 2)[0]
 
 
-class TNet(torch.jit.ScriptModule):
+class TNet(jit_nn_module):
 
     def __init__(self, feature_transfom_net: bool):
         super().__init__()
@@ -66,7 +73,7 @@ class TNet(torch.jit.ScriptModule):
         self._initial_matrix = torch.nn.init.eye_(
             torch.empty(size=self._output_matrix_shape)).reshape(1, self._expected_output_dim)
 
-    @torch.jit.script_method
+    @jit_script_method
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         assert x.shape[1] == self._expected_input_dim, f"{x.shape}, {self._expected_input_dim}"
         result = self._model(x)
@@ -80,7 +87,7 @@ class TNet(torch.jit.ScriptModule):
         return (initial_matrix + result).reshape(new_shape)
 
 
-class PointNet(torch.jit.ScriptModule):
+class PointNet(jit_nn_module):
 
     def __init__(self, number_of_classes: int):
         super().__init__()
@@ -127,7 +134,7 @@ class PointNet(torch.jit.ScriptModule):
             nn.Linear(256, number_of_classes),
         ])
 
-    @torch.jit.script_method
+    @jit_script_method
     def forward(self, points: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         batch_size = points.shape[0]
         assert points.shape[1] == 3, points.shape
@@ -160,7 +167,7 @@ class PointNet(torch.jit.ScriptModule):
         return scores, feature_transform_matrix  # to calculate regularization
 
 
-@torch.jit.script
+@jit_script
 def feature_regularization(feature_transform_matrix: torch.Tensor):
     A_A_T = torch.bmm(feature_transform_matrix, torch.transpose(feature_transform_matrix, 1, 2))
     identity = (torch.eye(feature_transform_matrix.shape[-1]).
@@ -169,6 +176,6 @@ def feature_regularization(feature_transform_matrix: torch.Tensor):
     return torch.mean(torch.linalg.matrix_norm(identity - A_A_T, ord="fro"))
 
 
-@torch.jit.script
+@jit_script
 def calculate_loss(scores: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
     return nn.functional.cross_entropy(scores, target)
