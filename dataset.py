@@ -45,8 +45,10 @@ class ModelNet(Dataset):
             cache_file_path = file_path.relative_to(dataset_dir).with_suffix(".npy")
             cache_file_path = cache_dir / cache_file_path
             if cache_file_path.exists():
-                self._cached_files.append(cache_file_path)
-                continue
+                cached_points_number = len(np.load(str(cache_file_path)))
+                if self._points_number == cached_points_number:
+                    self._cached_files.append(cache_file_path)
+                    continue
             cache_file_path.parent.mkdir(parents=True, exist_ok=True)
             sampled_points = self._load_mesh_and_sample_points(file_path,
                                                                self._points_number)

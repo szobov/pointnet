@@ -1,5 +1,6 @@
 import pathlib
 import typing as _t
+import logging
 
 import numpy as np
 
@@ -11,6 +12,9 @@ import rich.progress
 
 from dataset import ModelNet
 from model import PointNet, feature_regularization, calculate_loss
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 def get_optimizer(model: torch.nn.Module) -> tuple[torch.optim.Optimizer, torch.optim.lr_scheduler.StepLR]:
@@ -27,6 +31,25 @@ def get_optimizer(model: torch.nn.Module) -> tuple[torch.optim.Optimizer, torch.
     return optimizer, scheduler
 
 
+def process_batch(
+        batch: tuple[torch.Tensor, torch.Tensor],
+        model: torch.nn.Module, device: torch.device
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+
+    (points, classes) = batch
+    (points, classes) = points.to(device, non_blocking=True), classes.to(device, non_blocking=True)
+    (scores, feature_transform_matrix) = model(points)
+    L_reg = feature_regularization(feature_transform_matrix)
+    loss = calculate_loss(scores, classes)
+    return loss, L_reg, scores, classes
+
+
+def estimate_prediciton(scores: torch.Tensor, expected_classes: torch.Tensor) -> float:
+    predicted_classes = scores.argmax(1)
+    assert predicted_classes.shape == expected_classes.shape, f"{predicted_classes.shape} == {expected_classes.shape}"
+    return (predicted_classes == expected_classes).type(torch.float).sum().cpu().item()
+
+
 def train_loop(dataloader: DataLoader, model: torch.nn.Module,
                optimizer: torch.optim.Optimizer, scheduler: torch.optim.lr_scheduler.StepLR,
                device: torch.device,
@@ -36,23 +59,21 @@ def train_loop(dataloader: DataLoader, model: torch.nn.Module,
     size = len(dataloader.dataset)
     model.train()
     for idx, batch in rich.progress.track(enumerate(dataloader), description="Training"):
-        (points, cls) = batch
-        (points, cls) = points.to(device, non_blocking=True), cls.to(device, non_blocking=True)
         optimizer.zero_grad(set_to_none=True)
 
-        (scores, feature_transform_matrix) = model(points)
-        L_reg = feature_regularization(feature_transform_matrix)
-        loss = calculate_loss(scores, cls)
-        loss = loss + L_reg * w_reg
+        (loss, loss_regularization, scores, classes) = process_batch(batch, model, device)
+        loss = loss + loss_regularization * w_reg
 
         loss.backward()
         optimizer.step()
         if profiler is not None:
             profiler.step()
         if idx % 50 == 0:
-            correct = (scores.argmax(1) == cls).type(torch.float).sum().cpu().item()
-            current = idx * len(points)
-            print(f"loss: {loss.item():>7f}, regularization loss: {L_reg.item():>7f}, correct: {correct:>7f},  [{current:>5d}/{size:>5d}]")
+            correct = estimate_prediciton(scores, classes) / len(classes)
+            current = idx * len(batch[0])
+            logging.info(
+                "loss: %.7f, regularization loss: %.7f, correct: %.1f%, [%5d/%5d]",
+                loss.item(), loss_regularization.item(), 100 * correct, current, size)
     scheduler.step()
 
 
@@ -67,18 +88,13 @@ def test_loop(dataloader: DataLoader, model: torch.nn.Module, device: torch.devi
 
     with torch.no_grad():
         for batch in rich.progress.track(dataloader, description="Validating"):
-            (points, cls) = batch
-            (points, cls) = points.to(device, non_blocking=True), cls.to(device, non_blocking=True)
-            (scores, _) = model(points)
-            loss = calculate_loss(scores, cls)
-            test_loss += loss.cpu()
-            predicted_classes = scores.argmax(1)
-            assert predicted_classes.shape == cls.shape, f"{predicted_classes.shape} == {cls.shape}"
-            correct += (predicted_classes == cls).type(torch.float).sum().cpu().item()
+            (loss, _, scores, classes) = process_batch(batch, model, device)
+            test_loss += loss.cpu().item()
+            correct += estimate_prediciton(scores, classes)
 
     test_loss /= num_batches
     correct /= size
-    print(f"Test Error: \n Accuracy: {(100*correct):>0.1f}%, Avg loss: {test_loss:>7f} \n")
+    LOGGER.info(f"Test Error: Accuracy: {(100*correct):>0.1f}%, Avg loss: {test_loss:>7f} \n")
 
 
 def main():
@@ -87,6 +103,7 @@ def main():
     epoch_number = 250
     dataloader_workers_num = 12
     enable_profiler = False
+    pretrained_model_path = pathlib.Path("/home/szobov/dev/learning/pointnet/log/model-1.pth")
 
     device: torch.device
     if torch.cuda.is_available():
@@ -94,7 +111,7 @@ def main():
     else:
         device = torch.device('cpu')
 
-    print("Use device: ", device)
+    LOGGER.info("Use device: %s", device)
 
     writer = SummaryWriter('log/profile')
     train_dataset = ModelNet(dataset_dir, train=True)
@@ -106,6 +123,9 @@ def main():
                                  shuffle=True, num_workers=dataloader_workers_num)
 
     model = PointNet(len(train_dataset.classes))
+    if pretrained_model_path.exists():
+        LOGGER.info("Use pretrained model from: %s", pretrained_model_path)
+        model.load_state_dict(torch.load(str(pretrained_model_path)))
     writer.add_graph(model, torch.rand(5, 3, 1000))
     model = model.to(device)
     if device == torch.device('cuda'):
@@ -114,7 +134,7 @@ def main():
     (optimizer, scheduler) = get_optimizer(model)
 
     for t in range(epoch_number):
-        print(f"Epoch {t+1}\n-------------------------------")
+        logging.info(f"Epoch {t+1}\n-------------------------------")
         if enable_profiler:
             with torch.profiler.profile(
                     activities=[
@@ -136,5 +156,8 @@ def main():
         test_loop(test_dataloader, model, device)
     torch.save(model.state_dict(), "log/model.pth")
 
+
 if __name__ == '__main__':
+    logging.basicConfig()
+    logging.getLogger().setLevel(logging.INFO)
     main()

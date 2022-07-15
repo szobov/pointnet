@@ -20,13 +20,6 @@ class TNet(jit_nn_module):
     def __init__(self, feature_transfom_net: bool):
         super().__init__()
         # output 3x3 matrix (initialized as identity matrix)
-        # shared MLP(64, 128, 1024) on each point
-        # ReLU and batch-norm
-        # max-pooling across points
-        # ReLU and batch-norm
-        # fully-connected with size 512
-        # ReLU and batch-norm
-        # fully-connected with size 256
         # TODO: move from nn.Sequential, since it's very difficult to debug it
         self._is_feature_transform_net = feature_transfom_net
         self._expected_input_dim = 3
