@@ -1,6 +1,8 @@
 import pathlib
 import typing as _t
 
+import numpy as np
+
 import torch
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
@@ -26,7 +28,7 @@ def get_optimizer(model: torch.nn.Module) -> tuple[torch.optim.Optimizer, torch.
 
 
 def train_loop(dataloader: DataLoader, model: torch.nn.Module,
-               optimizer: torch.optim.Optimizer, sheduler: torch.optim.lr_scheduler.StepLR,
+               optimizer: torch.optim.Optimizer, scheduler: torch.optim.lr_scheduler.StepLR,
                device: torch.device,
                profiler: _t.Optional[torch.profiler.profile]):
     w_reg = 0.001
@@ -36,49 +38,54 @@ def train_loop(dataloader: DataLoader, model: torch.nn.Module,
     for idx, batch in rich.progress.track(enumerate(dataloader), description="Training"):
         (points, cls) = batch
         (points, cls) = points.to(device, non_blocking=True), cls.to(device, non_blocking=True)
+        optimizer.zero_grad(set_to_none=True)
+
         (scores, feature_transform_matrix) = model(points)
         L_reg = feature_regularization(feature_transform_matrix)
-        loss = calculate_loss(scores, torch.flatten(cls))
+        loss = calculate_loss(scores, cls)
         loss = loss + L_reg * w_reg
 
-        optimizer.zero_grad(set_to_none=True)
         loss.backward()
         optimizer.step()
         if profiler is not None:
             profiler.step()
         if idx % 50 == 0:
-            loss, current = loss.item(), idx * len(points)
-            print(f"loss: {loss:>7f}  [{current:>5d}/{size:>5d}]")
+            correct = (scores.argmax(1) == cls).type(torch.float).sum().cpu().item()
+            current = idx * len(points)
+            print(f"loss: {loss.item():>7f}, regularization loss: {L_reg.item():>7f}, correct: {correct:>7f},  [{current:>5d}/{size:>5d}]")
+    scheduler.step()
 
 
-def test_loop(dataloader: DataLoader, model: torch.nn.Module,
-              device: torch.device):
+def test_loop(dataloader: DataLoader, model: torch.nn.Module, device: torch.device):
+
     size = len(dataloader.dataset)
     num_batches = len(dataloader)
 
-    test_loss, correct = 0, 0
+    test_loss, correct = np.float64(0.0), np.float64(0.0)
 
     model.eval()
 
-    print("Validating...")
     with torch.no_grad():
-        for batch in dataloader:
+        for batch in rich.progress.track(dataloader, description="Validating"):
             (points, cls) = batch
             (points, cls) = points.to(device, non_blocking=True), cls.to(device, non_blocking=True)
             (scores, _) = model(points)
-            test_loss += PointNet.loss(scores, torch.flatten(cls)).item()
-            correct += (scores.argmax(1) == cls).type(torch.float).sum().item()
+            loss = calculate_loss(scores, cls)
+            test_loss += loss.cpu()
+            predicted_classes = scores.argmax(1)
+            assert predicted_classes.shape == cls.shape, f"{predicted_classes.shape} == {cls.shape}"
+            correct += (predicted_classes == cls).type(torch.float).sum().cpu().item()
 
     test_loss /= num_batches
     correct /= size
-    print(f"Test Error: \n Accuracy: {(100*correct):>0.1f}%, Avg loss: {test_loss:>8f} \n")
+    print(f"Test Error: \n Accuracy: {(100*correct):>0.1f}%, Avg loss: {test_loss:>7f} \n")
 
 
 def main():
     dataset_dir = pathlib.Path("/home/szobov/dev/learning/pointnet/dataset/ModelNet40")
-    batch_size = 8
+    batch_size = 32
     epoch_number = 250
-    dataloader_workers_num = 8
+    dataloader_workers_num = 12
     enable_profiler = False
 
     device: torch.device
@@ -101,7 +108,7 @@ def main():
     model = PointNet(len(train_dataset.classes))
     writer.add_graph(model, torch.rand(5, 3, 1000))
     model = model.to(device)
-    if torch.cuda.is_available():
+    if device == torch.device('cuda'):
         assert all(map(lambda p: p.is_cuda, model.parameters()))
 
     (optimizer, scheduler) = get_optimizer(model)
@@ -127,7 +134,7 @@ def main():
         else:
             train_loop(train_dataloader, model, optimizer, scheduler, device, profiler=None)
         test_loop(test_dataloader, model, device)
-
+    torch.save(model.state_dict(), "log/model.pth")
 
 if __name__ == '__main__':
     main()
