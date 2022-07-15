@@ -121,7 +121,7 @@ class PointNet(torch.jit.ScriptModule):
             nn.ReLU()
         ])
 
-        self._dropout = nn.Dropout(p=0.7)
+        self._dropout = nn.Dropout(p=0.3)
 
         self._mlps_4 = nn.Sequential(*[
             nn.Linear(256, number_of_classes),
