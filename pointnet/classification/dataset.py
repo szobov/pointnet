@@ -1,5 +1,6 @@
 import pathlib
 import itertools
+import logging
 
 import typer
 import trimesh
@@ -8,6 +9,9 @@ import numpy as np
 
 import torch
 from torch.utils.data import Dataset
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 class ModelNet(Dataset):
@@ -52,7 +56,7 @@ class ModelNet(Dataset):
             cache_file_path.parent.mkdir(parents=True, exist_ok=True)
             sampled_points = self._load_mesh_and_sample_points(file_path,
                                                                self._points_number)
-            print("Save cached file in: %s", cache_file_path)
+            LOGGER.info("Save cached file in: %s", cache_file_path)
             np.save(cache_file_path, sampled_points)
             self._cached_files.append(cache_file_path)
         assert len(self._cached_files) == len(self._files)
@@ -132,6 +136,18 @@ class ModelNet(Dataset):
 
     def __len__(self) -> int:
         return(len(self.files))
+
+
+def get_data_loader(path_to_dataset: pathlib.Path, is_train: bool,
+                    batch_size: int, dataloader_workers_num: int,
+                    device: torch.device) -> torch.utils.data.DataLoader:
+    dataset = ModelNet(path_to_dataset, train=is_train)
+    pin_memory = False
+    if device == torch.device('cuda'):
+        pin_memory = True
+    return torch.utils.data.DataLoader(
+        dataset, batch_size=batch_size, pin_memory=pin_memory,
+        shuffle=True, num_workers=dataloader_workers_num)
 
 
 def __test__(dataset_dir: pathlib.Path = pathlib.Path("/home/szobov/dev/learning/pointnet/dataset/ModelNet40")):

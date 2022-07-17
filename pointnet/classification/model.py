@@ -29,7 +29,7 @@ class TNet(jit_nn_module):
         self._expected_output_dim = self._expected_input_dim * self._expected_input_dim
         self._output_matrix_shape = (self._expected_input_dim, self._expected_input_dim)
 
-        self._layers = [
+        self._layers: list[nn.Module] = [
             # I use Conv1d instead of Linear because BatchNorm1d
             # expects the input shape to be (N, C, L), but with Linear
             # it will be (N, L, C)
