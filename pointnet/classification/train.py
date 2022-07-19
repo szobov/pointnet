@@ -42,7 +42,7 @@ def _train_loop(dataloader: DataLoader, model: torch.nn.Module,
             correct = estimate_prediciton(scores, classes) / len(classes)
             current = idx * len(batch[0])
             logging.info(
-                "loss: %.7f, regularization loss: %.7f, correct: %.1f%, [%5d/%5d]",
+                "loss: %.7f, regularization loss: %.7f, correct: %.1f%%, [%5d/%5d]",
                 loss.item(), loss_regularization.item(), 100 * correct, current, size)
     scheduler.step()
 
@@ -74,7 +74,8 @@ def train(dataset_dir: pathlib.Path,
           log_dir: pathlib.Path = pathlib.Path("log/"),
           batch_size: int = 32, epoch_number: int = 250,
           dataloader_workers_num: int = 12, enable_profiler: bool = False):
-
+    dataset_dir = dataset_dir.resolve()
+    assert dataset_dir.exists()
     assert log_dir.exists()
     run_id = datetime.datetime.now().strftime("%d-%m-%Y-%H:%M:%S")
 
