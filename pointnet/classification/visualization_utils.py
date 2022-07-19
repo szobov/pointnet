@@ -1,12 +1,12 @@
-import random
 import pathlib
+import random
 import webbrowser
 
-import typer
-import trimesh
 import scenepic as sp
+import trimesh
+import typer
 
-from dataset import ModelNet
+from .dataset import ModelNet
 
 
 def main(
@@ -27,7 +27,7 @@ def main(
     scene.link_canvas_events(mesh_canvas, points_canvas, augmented_points_canvas)
     for indx in random.choices(range(len(dataset)), k=10):
         item = dataset[indx]
-        text = dataset.get_class_description(int(item[1][0]))
+        text = dataset.get_class_description(int(item[1]))
         mesh_frame = mesh_canvas.create_frame()
         points_frame = points_canvas.create_frame()
         augmented_points_frame = augmented_points_canvas.create_frame()

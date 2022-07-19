@@ -1,6 +1,6 @@
 import torch
-
-from model import TNet, PointNet, feature_regularization, calculate_loss
+from pointnet.classification.model import (PointNet, TNet, calculate_loss,
+                                           feature_regularization)
 
 
 def test_tnet():
