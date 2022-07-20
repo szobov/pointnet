@@ -1,15 +1,14 @@
-import pathlib
 import itertools
 import logging
-
-import typer
-import trimesh
+import pathlib
 
 import numpy as np
-
 import torch
+import trimesh
+import typer
 from torch.utils.data import Dataset
 
+from ..common.data_processing import normalize_to_unit_sphere
 
 LOGGER = logging.getLogger(__name__)
 
@@ -80,7 +79,8 @@ class ModelNet(Dataset):
         else:
             sampled_points = self._load_mesh_and_sample_points(file_path,
                                                                self._points_number)
-        normalized_points = self._normalize_to_unit_sphere(sampled_points)
+        normalized_points = normalize_to_unit_sphere(sampled_points)
+        assert len(normalized_points) == self._points_number
         if self._train:
             augmented_points = self._augment_points(normalized_points)
             assert augmented_points.shape == sampled_points.shape
@@ -104,13 +104,6 @@ class ModelNet(Dataset):
     def _shuffle_points(self, points: np.ndarray) -> np.ndarray:
         return points[np.random.choice(len(points), len(points), replace=True), :]
 
-    def _normalize_to_unit_sphere(self, points: np.ndarray) -> np.ndarray:
-        # I didn't get what they meant by "normalize into a unit sphere",
-        # but this normalization should feat this definition
-        points /= np.max(np.linalg.norm(points - np.mean(points), axis=-1))
-        assert len(points) == self._points_number
-        return points
-
     def _rotate_around_z_axis(self, points: np.ndarray) -> np.ndarray:
         # In the paper they mentioned "along up-axis", but the problem that
         # "up-axis" depends on how you chose the order. I assume they
@@ -133,6 +126,10 @@ class ModelNet(Dataset):
         jitter = 0.02 * np.random.randn(*points.shape)
         assert jitter.shape == points.shape
         return points + jitter
+
+    @property
+    def points_number(self) -> int:
+        return self._points_number
 
     def __len__(self) -> int:
         return(len(self.files))
