@@ -4,13 +4,12 @@ import webbrowser
 
 import scenepic as sp
 import trimesh
-import typer
 
 from ..common.data_processing import normalize_to_unit_sphere
 from .dataset import ModelNet
 
 
-def main(
+def visualize_modelnet(
         dataset_dir: pathlib.Path = pathlib.Path("/home/szobov/dev/learning/pointnet/dataset/ModelNet40"),
         output_file: pathlib.Path = pathlib.Path("/tmp/modelnet.html")
 ):
@@ -59,7 +58,3 @@ def main(
 
     scene.save_as_html(str(output_file), title="ModelNet")
     webbrowser.open(str(output_file))
-
-
-if __name__ == '__main__':
-    typer.run(main)

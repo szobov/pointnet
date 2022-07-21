@@ -5,7 +5,6 @@ import pathlib
 import numpy as np
 import torch
 import trimesh
-import typer
 from torch.utils.data import Dataset
 
 from ..common.data_processing import normalize_to_unit_sphere
@@ -147,7 +146,7 @@ def get_data_loader(path_to_dataset: pathlib.Path, is_train: bool,
         shuffle=True, num_workers=dataloader_workers_num)
 
 
-def __test__(dataset_dir: pathlib.Path = pathlib.Path("/home/szobov/dev/learning/pointnet/dataset/ModelNet40")):
+def test_modelnet(dataset_dir: pathlib.Path = pathlib.Path("/home/szobov/dev/learning/pointnet/dataset/ModelNet40")):
     dataset = ModelNet(dataset_dir)
     assert len(dataset.classes) == 40
     assert dataset.classes["airplane"] == 0
@@ -155,8 +154,3 @@ def __test__(dataset_dir: pathlib.Path = pathlib.Path("/home/szobov/dev/learning
     item = dataset[0]
     assert item[1].data == torch.tensor([0])
     assert item[0].shape[0] == 3, f"{item[0][0].shape} = (3, n)"
-
-
-if __name__ == '__main__':
-    typer.run(__test__)
-

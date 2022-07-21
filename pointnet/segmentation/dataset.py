@@ -2,11 +2,9 @@ import dataclasses
 import json
 import logging
 import pathlib
-import typing as _t
 
 import numpy as np
 import torch
-import typer
 from torch.utils.data import Dataset
 
 from ..common.data_processing import normalize_to_unit_sphere
@@ -138,7 +136,7 @@ def get_data_loader(path_to_dataset: pathlib.Path, is_train: bool,
         shuffle=True, num_workers=dataloader_workers_num)
 
 
-def test_dataset(dataset_dir: pathlib.Path = pathlib.Path("/home/szobov/dev/learning/pointnet/dataset/shapenetcore_partanno_segmentation_benchmark_v0/")):
+def test_shapenet(dataset_dir: pathlib.Path = pathlib.Path("/home/szobov/dev/learning/pointnet/dataset/shapenetcore_partanno_segmentation_benchmark_v0/")):
     dataset = ShapeNet(dataset_dir)
     item = dataset[0]
     points, labels = item
@@ -151,7 +149,3 @@ def test_dataset(dataset_dir: pathlib.Path = pathlib.Path("/home/szobov/dev/lear
     for batch in dataloader:
         assert len(set(map(lambda item: item[0].shape[-1], batch))) == 1
         return
-
-
-if __name__ == '__main__':
-    typer.run(test_dataset)

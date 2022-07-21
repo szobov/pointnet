@@ -5,7 +5,6 @@ import webbrowser
 
 import numpy as np
 import scenepic as sp
-import typer
 
 from .dataset import ShapeNet
 
