@@ -130,7 +130,7 @@ def get_data_loader(path_to_dataset: pathlib.Path, is_train: bool,
                     batch_size: int, dataloader_workers_num: int,
                     device: torch.device) -> torch.utils.data.DataLoader:
     dataset = ShapeNet(path_to_dataset, train=is_train)
-    pin_memory: _t.Optional[bool] = None
+    pin_memory = False
     if device == torch.device('cuda'):
         pin_memory = True
     return torch.utils.data.DataLoader(
