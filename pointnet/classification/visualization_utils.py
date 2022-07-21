@@ -6,6 +6,7 @@ import scenepic as sp
 import trimesh
 import typer
 
+from ..common.data_processing import normalize_to_unit_sphere
 from .dataset import ModelNet
 
 
@@ -41,7 +42,7 @@ def main(
         points = scene.create_mesh()
         points.add_sphere(color=sp.Colors.Green)
         points.apply_transform(sp.Transforms.Scale(0.01))
-        points.enable_instancing(dataset._normalize_to_unit_sphere(
+        points.enable_instancing(normalize_to_unit_sphere(
             item[0].numpy().T))
         points_frame.add_mesh(points)
 
