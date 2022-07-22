@@ -7,8 +7,9 @@ from ..common.model import (GlobalMaxPooling, TNet, jit_nn_module,
 
 class PointNet(jit_nn_module):
 
-    def __init__(self, number_of_classes: int):
+    def __init__(self, points_number: int, number_of_classes: int):
         super().__init__()
+        self._points_number = points_number
         self._number_of_classes = number_of_classes
         self._transform_net = TNet(feature_transfom_net=False)
         self._mlps_1 = nn.Sequential(*[
@@ -37,19 +38,25 @@ class PointNet(jit_nn_module):
         ])
         self._global_max_pool = GlobalMaxPooling()  # (batch_size, 1024)
         self._mlps_3 = nn.Sequential(*[
-            nn.Linear(1024, 512),
+            # transformed local features concatenated with global features
+            nn.Conv1d(1024 + 64, 512, 1),
             nn.BatchNorm1d(512),
             nn.ReLU(),
 
-            nn.Linear(512, 256),
+            nn.Conv1d(512, 256, 1),
             nn.BatchNorm1d(256),
-            nn.ReLU()
-        ])
+            nn.ReLU(),
 
-        self._dropout = nn.Dropout(p=0.3)
+            nn.Conv1d(256, 128, 1),
+            nn.BatchNorm1d(128),
+            nn.ReLU(),
 
-        self._mlps_4 = nn.Sequential(*[
-            nn.Linear(256, number_of_classes),
+            nn.Conv1d(128, 128, 1),
+            nn.BatchNorm1d(128),
+            nn.ReLU(),
+
+            nn.Conv1d(128, number_of_classes, 1),
+
         ])
 
     @jit_script_method
@@ -68,18 +75,23 @@ class PointNet(jit_nn_module):
         assert feature_transform_matrix.shape == (batch_size, 64, 64), feature_transform_matrix.shape
         transformed_features = torch.bmm(feature_transform_matrix, features)
 
-        transformed_features = self._mlps_2(transformed_features)
-        assert transformed_features.shape[1] == 1024, transformed_features.shape
+        transformed_local_features = self._mlps_2(transformed_features)
+        assert transformed_local_features.shape[1] == 1024, transformed_local_features.shape
 
-        global_features = self._global_max_pool(transformed_features)
+        global_features = self._global_max_pool(transformed_local_features)
         assert global_features.shape == (batch_size, 1024), global_features.shape
 
-        global_features = self._mlps_3(global_features)
+        global_features_per_point = (
+            global_features
+            .repeat(transformed_features.shape[-1], 1)
+            .reshape(batch_size, global_features.shape[-1], transformed_features.shape[-1]))
 
-        # it should work only if model.train() was called
-        global_features = self._dropout(global_features)
+        concatenated_features = torch.cat((transformed_features, global_features_per_point), dim=1)
 
-        scores = self._mlps_4(global_features)
-        assert scores.shape == (batch_size, self._number_of_classes), scores.shape
+        assert concatenated_features.shape == (batch_size, 1024 + 64, self._points_number), concatenated_features.shape
+
+        scores = self._mlps_3(concatenated_features)
+
+        assert scores.shape == (batch_size, self._number_of_classes, self._points_number), scores.shape
 
         return scores, feature_transform_matrix  # to calculate regularization

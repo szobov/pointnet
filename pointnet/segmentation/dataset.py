@@ -141,6 +141,7 @@ def test_shapenet(dataset_dir: pathlib.Path = pathlib.Path("/home/szobov/dev/lea
     item = dataset[0]
     points, labels = item
     assert len(points[0]) == len(labels), "Number of labels should be equal to number of points"
+    assert labels.shape == (dataset.points_number, )
     assert points.shape == (3, dataset.points_number)
     assert labels[0] >= 0
 
