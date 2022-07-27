@@ -42,7 +42,10 @@ def visualize_shapenet(
         points.apply_transform(sp.Transforms.Scale(0.01))
         points.enable_instancing(
             segmented_points.numpy().T,
-            colors=np.array(list(map(_generate_color, labels))))
+            colors=np.array(list(
+                map(_generate_color,
+                    map(lambda l: dataset.global_point_label_to_class_and_local(int(l))[1],
+                        labels)))))
 
         segmented_points_frame.add_mesh(points)
 

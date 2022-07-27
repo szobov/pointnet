@@ -2,6 +2,7 @@ import dataclasses
 import json
 import logging
 import pathlib
+from collections import defaultdict
 
 import numpy as np
 import torch
@@ -17,15 +18,15 @@ class ShapeNetData:
     points_files: list[pathlib.Path] = dataclasses.field(default_factory=list)
     points_label_files: list[pathlib.Path] = dataclasses.field(default_factory=list)
     images_files: list[pathlib.Path] = dataclasses.field(default_factory=list)
-    classes: list[str] = dataclasses.field(default_factory=list)
+    class_nums: list[int] = dataclasses.field(default_factory=list)
 
     def add_entity(
-            self, class_description: str,
+            self, class_num: int,
             points_file: pathlib.Path, points_label_file: pathlib.Path, image_file: pathlib.Path):
         self.points_files.append(points_file)
         self.points_label_files.append(points_label_file)
         self.images_files.append(image_file)
-        self.classes.append(class_description)
+        self.class_nums.append(class_num)
 
 
 class ShapeNet(Dataset):
@@ -50,6 +51,12 @@ class ShapeNet(Dataset):
 
         self._data = ShapeNetData()
 
+        cache_file = dataset_dir / "cached_global_part_labels.json"
+        LOGGER.info("Use cache file: %s", cache_file)
+        need_cache = not cache_file.exists()
+
+        class_to_part_labels_num: defaultdict[int, int] = defaultdict(lambda: 0)
+
         for file_type in use_types:
             file_name = f"shuffled_{file_type}_file_list.json"
             split_file = dataset_dir / "train_test_split" / file_name
@@ -61,14 +68,41 @@ class ShapeNet(Dataset):
                 assert points_file.exists()
                 points_label_file = dataset_dir / class_offset / "points_label" / f"{sample_name}.seg"
                 assert points_label_file.exists()
+                if need_cache:
+                    max_part_label = np.max(np.loadtxt(points_label_file).astype(np.int8))
+                    if class_to_part_labels_num[int(class_offset)] < max_part_label:
+                        class_to_part_labels_num[int(class_offset)] = max_part_label
                 image_file = dataset_dir / class_offset / "seg_img" / f"{sample_name}.png"
                 assert image_file.exists()
-                self._data.add_entity(self._classes[int(class_offset)],
+                self._data.add_entity(int(class_offset),
                                       points_file, points_label_file, image_file)
+        self._class_part_label_to_global_label: dict[tuple[int, int], int] = {}
+        if need_cache:
+            LOGGER.info("Cache the mapping from (class + local part label) to global part label")
+            part_label_global_index = 0
+            for class_num, part_labels_num in sorted(class_to_part_labels_num.items(), key=lambda i: i[0]):
+                for part_label in range(1, part_labels_num + 1):
+                    self._class_part_label_to_global_label[(class_num, part_label)] = part_label_global_index
+                    part_label_global_index += 1
+            cache_file.write_text(
+                json.dumps(list(sorted(self._class_part_label_to_global_label.keys(), key=lambda i: i[0]))))
+        else:
+            LOGGER.info("Load from cache the mapping from (class + local part label) to global part label")
+            self._class_part_label_to_global_label = {
+                tuple(v): index for index, v in enumerate(json.loads(cache_file.read_text()))
+            }
+        self._global_label_to_class_and_local_label = {v: k for k, v in
+                                                       self._class_part_label_to_global_label.items()}
+        self._labels_number = len(self._class_part_label_to_global_label)
+        LOGGER.debug("Number of part's labels: %s", self._labels_number)
         assert (len(self._data.images_files) ==
                 len(self._data.points_label_files) ==
                 len(self._data.images_files) ==
-                len(self._data.classes))
+                len(self._data.class_nums))
+
+    @property
+    def labels_number(self) -> int:
+        return self._labels_number
 
     def _upsample_point_cloud(self, points: np.ndarray, labels: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         # In the paper they didn't mention how they deal with different dimentionality
@@ -86,19 +120,15 @@ class ShapeNet(Dataset):
         labels = np.append(labels, labels[samples_indexes], axis=0)
         return points, labels
 
+    def global_point_label_to_class_and_local(self, global_label: int) -> tuple[int, int]:
+        return self._global_label_to_class_and_local_label[global_label]
+
     def __getitem__(self, index: int) -> tuple[torch.Tensor, torch.Tensor]:
-        points = np.array(list(
-            map(lambda line: list(map(np.float64, line)),
-                map(str.split,
-                self._data.points_files[index].read_text().splitlines())
-                ))
-            )
-        points_label = np.array(list(
-            map(int,
-                self._data.points_label_files[index].read_text().splitlines()
-                )
-            )
-        )
+        points = np.loadtxt(self._data.points_files[index]).astype(np.float64)
+        class_num = self._data.class_nums[index]
+        points_label_local = np.loadtxt(self._data.points_label_files[index]).astype(np.int8)
+        points_label = np.array([self._class_part_label_to_global_label[(class_num, i)]
+                                 for i in points_label_local])
         points = normalize_to_unit_sphere(points)
 
         if len(points) < self._points_number:
@@ -111,8 +141,8 @@ class ShapeNet(Dataset):
         points = points[shuffled_indexes]
         points_label = points_label[shuffled_indexes]
 
-        points_tensor = torch.from_numpy(points.T.astype(np.float64))
-        points_label_tensor = torch.from_numpy(points_label.astype(np.int32))
+        points_tensor = torch.from_numpy(points.T)
+        points_label_tensor = torch.from_numpy(points_label)
 
         return points_tensor, points_label_tensor
 
@@ -144,9 +174,13 @@ def test_shapenet(dataset_dir: pathlib.Path = pathlib.Path("/home/szobov/dev/lea
     assert labels.shape == (dataset.points_number, )
     assert points.shape == (3, dataset.points_number)
     assert labels[0] >= 0
+    assert dataset.labels_number == 50
 
     dataloader = get_data_loader(dataset_dir, is_train=True, batch_size=16,
                                  dataloader_workers_num=4, device=torch.device("cpu"))
     for batch in dataloader:
         assert len(set(map(lambda item: item[0].shape[-1], batch))) == 1
+        (_, batch_labels) = batch
+        assert all(map(lambda labels: min(labels.numpy()) >= 0 and max(labels.numpy()) < 50,
+                       batch_labels))
         return
