@@ -18,13 +18,13 @@ def get_optimizer(model: torch.nn.Module) -> tuple[torch.optim.Optimizer, torch.
 
 
 def process_batch(
-        batch: tuple[torch.Tensor, torch.Tensor],
+        points: torch.Tensor,
+        labels: torch.Tensor,
         model: torch.nn.Module, device: torch.device
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
 
-    (points, classes) = batch
-    (points, classes) = points.to(device, non_blocking=True), classes.to(device, non_blocking=True)
+    (points, labels) = points.to(device, non_blocking=True), labels.to(device, non_blocking=True)
     (scores, feature_transform_matrix) = model(points)
     L_reg = feature_regularization(feature_transform_matrix)
-    loss = calculate_loss(scores, classes)
-    return loss, L_reg, scores, classes
+    loss = calculate_loss(scores, labels)
+    return loss, L_reg, scores, labels

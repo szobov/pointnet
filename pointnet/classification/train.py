@@ -28,8 +28,8 @@ def _train_loop(dataloader: DataLoader, model: torch.nn.Module,
     model.train()
     for idx, batch in rich.progress.track(enumerate(dataloader), description="Training"):
         optimizer.zero_grad(set_to_none=True)
-
-        (loss, loss_regularization, scores, classes) = process_batch(batch, model, device)
+        (points, labels) = batch
+        (loss, loss_regularization, scores, labels) = process_batch(points, labels, model, device)
         loss = loss + loss_regularization * w_reg
 
         loss.backward()
@@ -37,7 +37,7 @@ def _train_loop(dataloader: DataLoader, model: torch.nn.Module,
         if profiler is not None:
             profiler.step()
         if idx % 50 == 0:
-            correct = estimate_prediciton(scores, classes) / len(classes)
+            correct = estimate_prediciton(scores, labels) / len(labels)
             current = idx * len(batch[0])
             logging.info(
                 "loss: %.7f, regularization loss: %.7f, correct: %.1f%%, [%5d/%5d]",
@@ -57,9 +57,10 @@ def _test_loop(dataloader: DataLoader, model: torch.nn.Module, device: torch.dev
 
     with torch.no_grad():
         for batch in rich.progress.track(dataloader, description="Validating"):
-            (loss, _, scores, classes) = process_batch(batch, model, device)
+            (points, labels) = batch
+            (loss, _, scores, labels) = process_batch(points, labels, model, device)
             test_loss += loss.cpu().item()
-            correct += estimate_prediciton(scores, classes)
+            correct += estimate_prediciton(scores, labels)
 
     test_loss /= num_batches
     correct /= size
