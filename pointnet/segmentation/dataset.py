@@ -104,6 +104,13 @@ class ShapeNet(Dataset):
     def labels_number(self) -> int:
         return self._labels_number
 
+    @property
+    def class_number(self) -> int:
+        return len(self._classes)
+
+    def get_class_description(self, class_number: int) -> str:
+        return self._classes[class_number]
+
     def _upsample_point_cloud(self, points: np.ndarray, labels: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         # In the paper they didn't mention how they deal with different dimentionality
         # of the samples from the dateset. I decided to, let's say, "upsample" point cloud in
@@ -123,8 +130,8 @@ class ShapeNet(Dataset):
     def global_point_label_to_class_and_local(self, global_label: int) -> tuple[int, int]:
         return self._global_label_to_class_and_local_label[global_label]
 
-    def __getitem__(self, index: int) -> tuple[torch.Tensor, torch.Tensor]:
-        points = np.loadtxt(self._data.points_files[index]).astype(np.float64)
+    def __getitem__(self, index: int) -> tuple[torch.Tensor, torch.Tensor, int]:
+        points = np.loadtxt(self._data.points_files[index])
         class_num = self._data.class_nums[index]
         points_label_local = np.loadtxt(self._data.points_label_files[index]).astype(np.int8)
         points_label = np.array([self._class_part_label_to_global_label[(class_num, i)]
@@ -141,10 +148,10 @@ class ShapeNet(Dataset):
         points = points[shuffled_indexes]
         points_label = points_label[shuffled_indexes]
 
-        points_tensor = torch.from_numpy(points.T)
+        points_tensor = torch.from_numpy(points.T.astype(np.float32))
         points_label_tensor = torch.from_numpy(points_label)
 
-        return points_tensor, points_label_tensor
+        return points_tensor, points_label_tensor, class_num
 
     def __len__(self) -> int:
         return(len(self._data.points_files))
@@ -169,7 +176,7 @@ def get_data_loader(path_to_dataset: pathlib.Path, is_train: bool,
 def test_shapenet(dataset_dir: pathlib.Path = pathlib.Path("/home/szobov/dev/learning/pointnet/dataset/shapenetcore_partanno_segmentation_benchmark_v0/")):
     dataset = ShapeNet(dataset_dir)
     item = dataset[0]
-    points, labels = item
+    points, labels, cls = item
     assert len(points[0]) == len(labels), "Number of labels should be equal to number of points"
     assert labels.shape == (dataset.points_number, )
     assert points.shape == (3, dataset.points_number)
@@ -179,8 +186,7 @@ def test_shapenet(dataset_dir: pathlib.Path = pathlib.Path("/home/szobov/dev/lea
     dataloader = get_data_loader(dataset_dir, is_train=True, batch_size=16,
                                  dataloader_workers_num=4, device=torch.device("cpu"))
     for batch in dataloader:
-        assert len(set(map(lambda item: item[0].shape[-1], batch))) == 1
-        (_, batch_labels) = batch
+        (_, batch_labels, _) = batch
         assert all(map(lambda labels: min(labels.numpy()) >= 0 and max(labels.numpy()) < 50,
                        batch_labels))
         return
