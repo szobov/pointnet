@@ -9,10 +9,10 @@ import torch
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
+from ..common.profiler_utils import get_profiler
 from ..common.train_utils import get_optimizer, process_batch
 from .dataset import ModelNet, get_data_loader
 from .model import PointNet
-from .profiler_utils import get_profiler
 from .train_utils import estimate_prediciton
 
 LOGGER = logging.getLogger(__name__)
