@@ -7,7 +7,6 @@ import numpy as np
 import rich.progress
 import torch
 from torch.utils.data import DataLoader
-from torch.utils.tensorboard import SummaryWriter
 
 from ..common.profiler_utils import get_profiler
 from ..common.train_utils import get_optimizer, process_batch
@@ -99,9 +98,6 @@ def train(dataset_dir: pathlib.Path,
     if pretrained_model_path is not None and pretrained_model_path.exists():
         LOGGER.info("Use pretrained model from: %s", pretrained_model_path)
         model.load_state_dict(torch.load(str(pretrained_model_path)))
-
-    writer = SummaryWriter(str(log_dir))
-    writer.add_graph(model, torch.rand(5, 3, train_dataloader.dataset.points_number))
 
     model = model.to(device)
 

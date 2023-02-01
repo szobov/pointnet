@@ -8,7 +8,6 @@ import numpy as np
 import rich.progress
 import torch
 from torch.utils.data import DataLoader
-from torch.utils.tensorboard import SummaryWriter
 
 from ..common.profiler_utils import get_profiler
 from ..common.train_utils import get_optimizer, process_batch
@@ -54,7 +53,7 @@ def _test_loop(dataloader: DataLoader, model: torch.nn.Module, device: torch.dev
     num_batches = len(dataloader)
 
     test_loss, accuracy = np.float64(0.0), np.float64(0.0)
-    accumulated_iou_per_category: defaultdict[int, list[np.float64, int]] = defaultdict(lambda: [np.float64(0.0), 0])
+    accumulated_iou_per_category: defaultdict[int, list[np.float64 | int]] = defaultdict(lambda: [np.float64(0.0), 0])
 
     model.eval()
 
@@ -104,7 +103,7 @@ def train(dataset_dir: pathlib.Path,
 
     train_dataloader = get_data_loader(dataset_dir, is_train=True, batch_size=batch_size,
                                        dataloader_workers_num=dataloader_workers_num, device=device)
-    test_dataloader = get_data_loader(dataset_dir, is_train=True, batch_size=batch_size,
+    test_dataloader = get_data_loader(dataset_dir, is_train=False, batch_size=batch_size,
                                       dataloader_workers_num=dataloader_workers_num, device=device)
 
     assert isinstance(train_dataloader.dataset, ShapeNet)
@@ -113,9 +112,6 @@ def train(dataset_dir: pathlib.Path,
     if pretrained_model_path is not None and pretrained_model_path.exists():
         LOGGER.info("Use pretrained model from: %s", pretrained_model_path)
         model.load_state_dict(torch.load(str(pretrained_model_path)))
-
-    writer = SummaryWriter(str(log_dir))
-    writer.add_graph(model, torch.rand(5, 3, train_dataloader.dataset.points_number))
 
     model = model.to(device)
 
